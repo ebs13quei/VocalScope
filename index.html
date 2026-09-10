@@ -666,6 +666,43 @@
     #export-canvas {
       display: none;
     }
+
+    /* 画像保存モーダル（スマホPWA対応） */
+    .image-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(6px);
+      z-index: 10000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      gap: 12px;
+    }
+    .image-modal-content {
+      max-width: 90%;
+      max-height: 75vh;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+      border: 1px solid var(--border-color);
+    }
+    .image-modal-tip {
+      font-size: 13px;
+      color: #94a3b8;
+      text-align: center;
+    }
+    .image-modal-close {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 8px 24px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -882,6 +919,13 @@
   </main>
 
   <canvas id="export-canvas" width="1200" height="675"></canvas>
+
+  <!-- スマホ保存用プレビューモーダル -->
+  <div class="image-modal-overlay" id="image-modal">
+    <img id="modal-card-img" class="image-modal-content" alt="Vocal Profile Card">
+    <div class="image-modal-tip">💡 画像を長押しして「写真に追加」または「保存」してください</div>
+    <button class="image-modal-close" id="btn-close-modal">閉じる</button>
+  </div>
 
   <script>
     /* ==========================================================================
@@ -1628,10 +1672,48 @@
         }
       }
 
-      const a = document.createElement('a');
-      a.download = `VocalProfile_${vocalistName.replace(/[^a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
-      a.href = canvas.toDataURL('image/png');
-      a.click();
+      const fileName = `VocalProfile_${vocalistName.replace(/[^a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, '_')}.png`;
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          fallbackDownload(canvas, fileName);
+          return;
+        }
+
+        const file = new File([blob], fileName, { type: 'image/png' });
+        // スマホのWeb Share API（写真アプリへの保存、LINE共有などがネイティブで起動）
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: 'Vocal Range Profile',
+              text: `${vocalistName} の音域プロファイルカードです。`
+            });
+            return;
+          } catch (err) {
+            if (err.name === 'AbortError') return;
+          }
+        }
+
+        fallbackDownload(canvas, fileName);
+      }, 'image/png');
+    }
+
+    function fallbackDownload(canvas, fileName) {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (!isMobile) {
+        const a = document.createElement('a');
+        a.download = fileName;
+        a.href = canvas.toDataURL('image/png');
+        a.click();
+        return;
+      }
+
+      // スマホPWAなどでダウンロードが制限されている場合は長押し保存モーダルを表示
+      const dataUrl = canvas.toDataURL('image/png');
+      const modalImg = document.getElementById('modal-card-img');
+      modalImg.src = dataUrl;
+      document.getElementById('image-modal').style.display = 'flex';
     }
 
     /* ==========================================================================
@@ -1712,6 +1794,16 @@
 
       // エクスポートボタン
       document.getElementById('btn-export-card').addEventListener('click', exportProfileCard);
+
+      // モーダル閉じる
+      document.getElementById('btn-close-modal').addEventListener('click', () => {
+        document.getElementById('image-modal').style.display = 'none';
+      });
+      document.getElementById('image-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'image-modal') {
+          document.getElementById('image-modal').style.display = 'none';
+        }
+      });
     });
   </script>
 </body>
